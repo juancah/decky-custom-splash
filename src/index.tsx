@@ -3,7 +3,8 @@ import {
   PanelSection,
   PanelSectionRow,
   Navigation,
-  staticClasses
+  staticClasses,
+  useParams
 } from "@decky/ui";
 import {
   addEventListener,
@@ -11,11 +12,12 @@ import {
   callable,
   definePlugin,
   toaster,
-  // routerHook
+  routerHook
 } from "@decky/api"
+import logo from '../assets/logo.png'
 import { useState } from "react";
 import { FaShip } from "react-icons/fa";
-
+import patchLibraryApp from './patchLibraryApp'
 // import logo from "../assets/logo.png";
 
 // This function calls the python function "add", which takes in two numbers and returns their sum (as a number)
@@ -27,7 +29,21 @@ const add = callable<[first: number, second: number], number>("add");
 // This function calls the python function "start_timer", which takes in no arguments and returns nothing.
 // It starts a (python) timer which eventually emits the event 'timer_event'
 const startTimer = callable<[], void>("start_timer");
+const css = `
+.loadingthrobber_Container_3sa1N.loadingthrobber_PreloadThrobber_1-epa,
+.loadingthrobber_Container_3sa1N.loadingthrobber_ContainerBackground_2ngG3 {
+    background: green !important;
+}
 
+.loadingthrobber_Container_3sa1N img {
+    content: url("${logo}") !important;
+    opacity:1;
+    height: 200px;
+    width: 250px;
+}
+
+
+`
 function Content() {
   const [result, setResult] = useState<number | undefined>();
 
@@ -49,10 +65,11 @@ function Content() {
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => startTimer()}
+          onClick={() => startTimer(css,4278829838)}
         >
-          {"Start Python timer"}
+          {"Start gyat timer"}
         </ButtonItem>
+        <h3>{css}</h3>
       </PanelSectionRow>
 
       {/* <PanelSectionRow>
@@ -79,6 +96,7 @@ function Content() {
 export default definePlugin(() => {
   console.log("Template plugin initializing, this is called once on frontend startup")
 
+  const libraryPatch = patchLibraryApp(setAppId)
   // serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
   //   exact: true,
   // });
@@ -88,11 +106,11 @@ export default definePlugin(() => {
     test1: string,
     test2: boolean,
     test3: number
-  ]>("timer_event", (test1, test2, test3) => {
-    console.log("Template got timer_event with:", test1, test2, test3)
+  ]>("timer_event", (test1) => {
+    console.log("Template got timer_event with:", test1)
     toaster.toast({
-      title: "template got timer_event",
-      body: `${test1}, ${test2}, ${test3}`
+      title: "template got timer_event" + appId,
+      body: `${test1}`
     });
   });
 
@@ -108,6 +126,7 @@ export default definePlugin(() => {
     // The function triggered when your plugin unloads
     onDismount() {
       console.log("Unloading")
+      routerHook.removePatch('/library/app/:appid', libraryPatch)
       removeEventListener("timer_event", listener);
       // serverApi.routerHook.removeRoute("/decky-plugin-test");
     },
