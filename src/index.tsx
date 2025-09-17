@@ -28,20 +28,10 @@ const add = callable<[first: number, second: number], number>("add");
 
 // This function calls the python function "start_timer", which takes in no arguments and returns nothing.
 // It starts a (python) timer which eventually emits the event 'timer_event'
-const startTimer = callable<[], void>("start_timer");
+// css: string, appinfo: any
+const startTimer = callable<[css: string, appinfo: any], void>("start_timer");
+
 const css = `
-.loadingthrobber_Container_3sa1N.loadingthrobber_PreloadThrobber_1-epa,
-.loadingthrobber_Container_3sa1N.loadingthrobber_ContainerBackground_2ngG3 {
-    background: green !important;
-}
-
-.loadingthrobber_Container_3sa1N img {
-    content: url("${logo}") !important;
-    opacity:1;
-    height: 200px;
-    width: 250px;
-}
-
 
 `
 function Content() {
@@ -65,7 +55,7 @@ function Content() {
       <PanelSectionRow>
         <ButtonItem
           layout="below"
-          onClick={() => startTimer(css,4278829838)}
+        onClick={() => startTimer(css,4278829838)}
         >
           {"Start gyat timer"}
         </ButtonItem>
@@ -96,7 +86,7 @@ function Content() {
 export default definePlugin(() => {
   console.log("Template plugin initializing, this is called once on frontend startup")
 
-  const libraryPatch = patchLibraryApp(setAppId)
+  const libraryPatch = patchLibraryApp()
   // serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
   //   exact: true,
   // });
@@ -109,7 +99,7 @@ export default definePlugin(() => {
   ]>("timer_event", (test1) => {
     console.log("Template got timer_event with:", test1)
     toaster.toast({
-      title: "template got timer_event" + appId,
+      title: "template got timer_event",
       body: `${test1}`
     });
   });

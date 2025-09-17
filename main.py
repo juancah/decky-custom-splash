@@ -8,8 +8,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "lib"))
 import decky
 import asyncio
 import json
+import glob
 import requests
 import re
+import mimetypes
+import base64
 from websocket import create_connection
 
 DEVTOOLS_HOST = "127.0.0.1"
@@ -17,6 +20,9 @@ DEVTOOLS_PORT = 8080
 
 # Global mapping (populated from css_translations.json)
 CLASS_MAPPINGS = {}
+_HERO_CACHE = {}  # appid -> data_url
+
+#HERO CLASS:.sharedappdetailsheader_ImgSrc
 
 class Plugin:
     # A normal method. It can be called from the TypeScript side using @decky/api.
@@ -53,6 +59,45 @@ class Plugin:
     # -------------------------
     # CSS translations utilities
     # -------------------------
+    def _find_hero_image(self, appid: str) -> str | None:
+        """
+        Search for the hero image for a given appid under:
+        /home/deck/.steam/steam/userdata/<USER_ID>/config/grid/<APPID>_hero.*
+        Scans all user IDs inside userdata.
+        """
+        base_dir = "/home/deck/.steam/steam/userdata"
+        if not os.path.isdir(base_dir):
+            return None
+        print("HERO DATA HERO BASE DIR",os.listdir(base_dir))
+        try:
+            for user_id in os.listdir(base_dir):
+                grid_dir = os.path.join(base_dir, user_id, "config", "grid")
+                if not os.path.isdir(grid_dir):
+                    continue
+                pattern = os.path.join(grid_dir, f"{appid}_hero.*")
+                matches = glob.glob(pattern)
+                if matches:
+                    return matches[0]  # first valid match
+        except Exception as e:
+            decky.logger.debug(f"_find_hero_image error: {e}")
+
+        return None
+    def _make_data_url(self, path: str) -> str | None:
+        """
+        Read file at `path` and return a data: URL string like data:image/png;base64,....
+        Returns None on failure.
+        """
+        try:
+            ctype, _ = mimetypes.guess_type(path)
+            if not ctype:
+                ctype = "application/octet-stream"
+            with open(path, "rb") as f:
+                b = f.read()
+            b64 = base64.b64encode(b).decode("ascii")
+            return f"data:{ctype};base64,{b64}"
+        except Exception as e:
+            decky.logger.error(f"_make_data_url failed for {path}: {e}")
+            return None
     def _css_translations_path(self) -> str:
         # css_translations.json lives in /home/deck/homebrew/themes/css_translations.json
         # Use decky.DECKY_USER_HOME as the base (should be /home/deck)
@@ -176,55 +221,209 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"_eval_js error: {e}")
             raise
+    def _build_hashed_css(
+        self,
+        selectors: list[str],
+        declarations: str,
+        suffix: str = ""  # e.g. "::before", " img", etc.
+    ) -> str:
+        css_lines = []
+        for sel in selectors:
+            hashed = CLASS_MAPPINGS.get(sel)
+            if hashed:
+                full_selector = f".{hashed}{suffix}"
+            else:
+                full_selector = f'[class*="{sel}"]{suffix}'
+            css_block = f"{full_selector} {{\n{declarations}\n}}"
+            css_lines.append(css_block)
+        return "\n".join(css_lines)
+
 
     # --- modified start_timer: now injects CSS (and translates classnames)---
-    async def start_timer(self, css: str):
+    async def start_timer(self, css: str, appinfo: dict = None):
+        await asyncio.sleep(1)
         """
-        Called from TS (callable). Accepts a CSS string that may use readable classnames.
-        Injects the translated CSS once (no MutationObserver).
+        Inject CSS where:
+        - `css` is the client-provided container CSS (human-readable names OK)
+        - backend will append the hero image CSS automatically when appinfo.appid is provided
         """
         try:
-            # refresh mapping each injection (keeps up with Decky updates)
+            #await decky.emit("timer_event", "start_timer: begin")
+
+            # refresh mapping (safe)
             try:
                 self._load_class_mappings()
             except Exception as e:
                 decky.logger.warning(f"Failed to refresh class mappings: {e}")
 
-            # translate classes
+            # make sure css is a string
+            if css is None:
+                css = ""
+            else:
+                css = str(css)
+
+            # translate client CSS -> hashed classes
             translated_css = self._translate_css(css)
-            decky.logger.info(f"Translated CSS prefix: {translated_css[:120]}")
-         
-            # Safely encode CSS for JS
-            css_json = json.dumps(translated_css)
+            decky.logger.info(f"Translated CSS len={len(translated_css)}")
+            #await decky.emit("timer_event", "translated_css_ready")
 
-            # JS that injects style ONCE (if not already present). No observer.
-            js = f"""
-            (function(){{
-            try {{
-                const parent = document.head || document.documentElement || document.body;
-                if (!parent) return "err:no-parent";
+            # prepare hero override CSS if we have appinfo with appid
+            hero_css = ""
+            display_text = ""
+            appid = None
+            hero_data_url = None
+            print('HERODATA App info', appinfo)
+            if appinfo:
+                try:
+                    if isinstance(appinfo, str):
+                        try:
+                            appinfo = json.loads(appinfo)
+                        except Exception:
+                            appinfo = None
 
-                let s = document.getElementById("decky_inject_style");
-                if (!s) {{
-                s = document.createElement('style');
-                s.id = "decky_inject_style";
-                s.className = "pog";
-                parent.appendChild(s);
-                }}
-                // ALWAYS overwrite the stylesheet contents (this is the change)
-                s.textContent = {css_json};
-                "ok";
-            }} catch(e) {{
-                "err:"+e.toString();
-            }}
-            }})();
-            """
+                    if isinstance(appinfo, dict):
+                        display_text = appinfo.get("display_name") or appinfo.get("name") or ""
+                        appid = str(appinfo.get("appid") or appinfo.get("appId") or appinfo.get("id") or "")
+                        print('HERODATA App ID', appid)
+                        if appid:
+                            # cached lookup first
+                            hero_data_url = _HERO_CACHE.get(appid)
+                            if not hero_data_url:
+                                # find local hero file
+                                print('HERODATA prefind hero image', appid)
+                                path = self._find_hero_image(appid)
+                                if path:
+                                    hero_data_url = self._make_data_url(path)
+                                    if hero_data_url:
+                                        _HERO_CACHE[appid] = hero_data_url
+                                        decky.logger.info(f"Cached hero data url for {appid}")
+                                        #await decky.emit("timer_event", f"hero_cached:{appid}")
+                except Exception as e:
+                    decky.logger.warning(f"appinfo processing failed: {e}")
 
-           
-            await self._eval_js(js)
-            await decky.emit("timer_event", "injected")
+            if hero_data_url:
+                # normal image override
+                declarations_img = (
+                    f'  content: url("{hero_data_url}") !important;\n'
+                    "  opacity: 1 !important;\n"
+                    "  width: 100% !important;\n"
+                    "  height:100% !important;\n"
+                    "  z-index: 100 !important;\n"
+                    "  display: none !important;"
+                )
+
+                hero_img_css = self._build_hashed_css(
+                    ["loadingthrobber_Container_3sa1N"],
+                    declarations_img,
+                    suffix=" img"
+                )
+
+                # blurred background pseudo-element
+                declarations_blur = (
+                    "  content: \"\";\n"
+                    "  position: absolute;\n"
+                    "  top: 0;\n"
+                    "  left: 0;\n"
+                    "  right: 0;\n"
+                    "  bottom: 0;\n"
+                    f'  background-image: url("{hero_data_url}");\n'
+                    "  background-size: cover;\n"
+                    "  background-position: left;\n"
+                    "  filter: blur(10px);\n"
+                    "  opacity: 0.8;\n"
+                    "  animation: ps5-zoom 20s ease-in-out infinite alternate;"
+                )
+
+                hero_blur_css = self._build_hashed_css(
+                    ["loadingthrobber_ContainerBackground_2ngG3"],
+                    declarations_blur,
+                    suffix="::before"
+                )
+
+                # combine everything
+                hero_css = hero_img_css + "\n" + hero_blur_css
+
+                decky.logger.info("Prepared hero CSS override with blur")
+                #await decky.emit("timer_event", "hero_css_prepared")
+
+                combined_css = translated_css + "\n" + hero_css
+
+                # JSON-encode to safely embed into JS string
+                css_json = json.dumps(combined_css)
+                loading_readable = "loadingthrobber_LoadingStatus_3rAIy"
+                container_hashed = CLASS_MAPPINGS.get(loading_readable)
+                if container_hashed:
+                    container_selector_js = f"document.querySelectorAll('.{container_hashed}')"
+                else:
+                    container_selector_js = 'document.querySelectorAll(\'[class*="loadingthrobber_LoadingStatus_3rAIy"]\')'
+
+                display_json = json.dumps(display_text or "")
+
+                print('HERODATA', css_json)
+
+                # JS: overwrite style contents and create/update H1 for every container
+                js = f"""
+                (function(){{
+                    try {{
+                        const parent = document.head || document.documentElement || document.body;
+                        if (!parent) return 'err:no-parent';
+
+                        let s = document.getElementById("decky_inject_style");
+                        if (!s) {{
+                            s = document.createElement('style');
+                            s.id = "decky_inject_style";
+                            s.className = "pog";
+                            parent.appendChild(s);
+                        }}
+                        s.textContent = {css_json};
+
+                        try {{
+                            const containers = Array.from({container_selector_js});
+                            containers.forEach(container => {{
+                                // --- H1 insertion ---
+                                let h = container.querySelector('#decky_inject_h1');
+                                if (!h) {{
+                                    h = document.createElement('h1');
+                                    h.id = "decky_inject_h1";
+                                    container.appendChild(h);
+                                }}
+                                h.innerText = {display_json};
+
+                                // --- loop-wrapper insertion below H1 ---
+                                let existingLoop = container.querySelector('.loop-wrapper');
+                                if (!existingLoop) {{
+                                    const loopWrapper = document.createElement('div');
+                                    loopWrapper.className = 'loop-wrapper';
+                                    loopWrapper.innerHTML = `
+                                        <div class="mountain"></div>
+                                        <div class="hill"></div>
+                                        <div class="tree"></div>
+                                        <div class="tree"></div>
+                                        <div class="tree"></div>
+                                        <div class="rock"></div>
+                                        <div class="truck"></div>
+                                        <div class="wheels"></div>
+                                    `;
+                                    h.insertAdjacentElement('afterend', loopWrapper);
+                                }}
+                            }});
+                            console.log('CONTAINERS', containers);
+                        }} catch(innerErr) {{
+                            // ignore H1/loop-wrapper failures
+                        }}
+
+                        'ok';
+                    }} catch(e) {{
+                        'err:'+e.toString();
+                    }}
+                }})();
+                """
+
+                #await decky.emit("timer_event", "injecting css+h1")
+                await self._eval_js(js)
+                await decky.emit("timer_event", "injected css+h1")
         except Exception as e:
-            decky.logger.error(f"Failed to inject CSS: {e}")
+            decky.logger.error(f"start_timer injection failed: {e}")
             await decky.emit("timer_event", f"inject failed: {e}")
 
     # Migrations that should be performed before entering `_main()`.
