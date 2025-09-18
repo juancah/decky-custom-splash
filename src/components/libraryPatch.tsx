@@ -33,176 +33,21 @@ z-index:100;
    position: relative;
 
 }
-.loop-wrapper {
-    margin: 0 auto;
-    position: relative;
-    display: block;
+.loop-container {
     width: 100%;
-    height: 113px;
-    overflow: hidden;
-    border-bottom: 3px solid #fff;
-    color: #fff;
-    display: flex;
-    align-items: end;
-}
-.mountain {
-  position: absolute;
-  right: -900px;
-  bottom: -20px;
-  width: 2px;
-  height: 2px;
-  box-shadow: 
-    0 0 0 50px #4DB6AC,
-    60px 50px 0 70px #4DB6AC,
-    90px 90px 0 50px #4DB6AC,
-    250px 250px 0 50px #4DB6AC,
-    290px 320px 0 50px #4DB6AC,
-    320px 400px 0 50px #4DB6AC
-    ;
-  transform: rotate(130deg);
-  animation: mtn 20s linear infinite;
-}
-.hill {
-  position: absolute;
-  right: -900px;
-  bottom: -50px;
-  width: 400px;
-  border-radius: 50%;
-  height: 20px;
-  box-shadow: 
-    0 0 0 50px #4DB6AC,
-    -20px 0 0 20px #4DB6AC,
-    -90px 0 0 50px #4DB6AC,
-    250px 0 0 50px #4DB6AC,
-    290px 0 0 50px #4DB6AC,
-    620px 0 0 50px #4DB6AC;
-  animation: hill 4s 2s linear infinite;
-}
-.tree, .tree:nth-child(2), .tree:nth-child(3) {
-  position: absolute;
-  height: 100px; 
-  width: 35px;
-  bottom: 0;
-  background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/130015/tree.svg) no-repeat;
-}
-.rock {
-  margin-top: -17%;
-  height: 2%; 
-  width: 2%;
-  bottom: -2px;
-  border-radius: 20px;
-  position: absolute;
-  background: #ddd;
-}
-.truck, .wheels {
-  transition: all ease;
-  width: 85px;
-  margin-right: -60px;
-  bottom: 0px;
-  right: 50%;
-  position: absolute;
-  background: #eee;
-}
-.truck {
-  background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/130015/truck.svg) no-repeat;
-  background-size: contain;
-  height: 60px;
-  position:relative;
-  left:0;
-}
-.truck:before {
-  content: " ";
-  position: absolute;
-  width: 25px;
-  box-shadow:
-    -30px 28px 0 1.5px #fff,
-     -35px 18px 0 1.5px #fff;
-}
-.wheels {
-  background: url(https://s3-us-west-2.amazonaws.com/s.cdpn.io/130015/wheels.svg) no-repeat;
-  height: 15px;
-  margin-bottom: 0;
+    position: absolute;
+    bottom: 0;
 }
 
-.tree  { animation: tree 3s 0.000s linear infinite; }
-.tree:nth-child(2)  { animation: tree2 2s 0.150s linear infinite; }
-.tree:nth-child(3)  { animation: tree3 8s 0.050s linear infinite; }
-.rock  { animation: rock 4s   -0.530s linear infinite; }
-.truck {
-  animation: truck 4s linear infinite;
-}
-
-.wheels {
-  animation: truck 4s linear infinite;
-}
-
-.truck:before { animation: wind 1.5s   0.000s ease infinite; }
-
-
-@keyframes tree {
-  0%   { transform: translate(1350px); }
-  50% {}
-  100% { transform: translate(-50px); }
-}
-@keyframes tree2 {
-  0%   { transform: translate(650px); }
-  50% {}
-  100% { transform: translate(-50px); }
-}
-@keyframes tree3 {
-  0%   { transform: translate(2750px); }
-  50% {}
-  100% { transform: translate(-50px); }
-}
-
-@keyframes rock {
-  0%   { right: -200px; }
-  100% { right: 2000px; }
-}
-@keyframes truck {
-  0%   { transform: translateX(-10vw) translateY(0); }
-  7%   { transform: translateX(0vw) translateY(-6px); }   /* bounce entering */
-  9%   { transform: translateX(2vw) translateY(0); }
-  10%  { transform: translateX(3vw) translateY(-1px); }
-  11%  { transform: translateX(4vw) translateY(0); }
-  50%  { transform: translateX(50vw) translateY(0); }     /* middle */
-  93%  { transform: translateX(93vw) translateY(0); }     /* edge still visible */
-  100% { transform: translateX(110vw) translateY(0); }    /* fully off right */
-}
-
-
-@keyframes wind {
-  0%   {  }
-  50%   { transform: translateY(3px) }
-  100%   { }
-}
-@keyframes mtn {
-  100% {
-    transform: translateX(-2000px) rotate(130deg);
-  }
-}
-@keyframes hill {
-  100% {
-    transform: translateX(-2000px);
-  }
-}
 @keyframes ps5-zoom {
     0% {
-        transform: scale(1) translate(0%, 0%);
-    }
-    25% {
-        transform: scale(1.05) translate(-2%, -1%);
-    }
-    50% {
-        transform: scale(1.1) translate(-4%, -2%);
-    }
-    75% {
-        transform: scale(1.08) translate(-3%, -1%);
+        transform: scale(1);
     }
     100% {
-        transform: scale(1.12) translate(-5%, -3%);
+        transform: scale(1.15); /* subtle zoom in */
     }
 }
+
 /* Top cinematic bar */
 .cinema-bar-top,
 .cinema-bar-bottom {
@@ -225,6 +70,266 @@ z-index:100;
     0% { opacity: 0; }
     100% { opacity: 1; }
 }
+.circle {
+  position: relative;
+  left: -100px;
+  width: 0;
+  height: 0;
+  border: 50px solid #FDD835;
+  border-radius: 50%;
+  border-right-color: transparent;
+  animation: move 5s linear 0s infinite normal forwards;
+}
+
+.circle:before {
+  content: "";
+  position: absolute;
+  top: -50px;
+  left: -50px;
+  width: 0;
+  height: 0;
+  border: 50px solid #FDD835;
+  border-radius: 50%;
+  border-right-color: transparent;
+  animation: chomp1 .25s ease-in-out 0s infinite normal forwards;
+}
+
+.circle:after {
+  content: "";
+  position: absolute;
+  top: -50px;
+  left: -50px;
+  width: 0;
+  height: 0;
+  border: 50px solid #FDD835;
+  border-radius: 50%;
+  border-right-color: transparent;
+  animation: chomp2 .25s ease-in-out 0s infinite normal forwards;
+}
+
+.loader {
+  position: relative;
+  top: 50px;
+  width: 300px;
+  height: 0px;
+  border-top: 10px dotted black;
+  animation: loader_4013 5s ease-in-out 0s infinite normal forwards;
+}
+
+.dots {
+  position: relative;
+  top: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  margin: 0 10px;
+  border-radius: 50%;
+  background: #1E88E5;
+  animation: dot1 5s linear 0s infinite none normal;
+}
+
+.dot:nth-child(1) {
+  animation-delay: 0s
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.25s
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.5s
+}
+
+.dot:nth-child(4) {
+  animation-delay: 0.75s
+}
+
+.dot:nth-child(5) {
+  animation-delay: 1s
+}
+
+.dot:nth-child(6) {
+  animation-delay: 1.25s
+}
+
+.dot:nth-child(7) {
+  animation-delay: 1.5s
+}
+
+.dot:nth-child(8) {
+  animation-delay: 1.75s
+}
+
+.dot:nth-child(9) {
+  animation-delay: 1.9s
+}
+
+.dot:nth-child(10) {
+  animation-delay: 2.1s
+}
+
+.dots2 {
+  position: relative;
+  top: 50px;
+  left: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.dot2 {
+  position: relative;
+  left: -10px;
+  width: 10px;
+  height: 10px;
+  margin: 0 10px;
+  border-radius: 50%;
+  background: #F44336;
+  opacity: 0;
+  animation: dot2 5s linear 0s infinite none normal;
+}
+
+.dot2:nth-child(10) {
+  animation-delay: 2.5s
+}
+
+.dot2:nth-child(9) {
+  animation-delay: 2.75s
+}
+
+.dot2:nth-child(8) {
+  animation-delay: 3.0s
+}
+
+.dot2:nth-child(7) {
+  animation-delay: 3.25s
+}
+
+.dot2:nth-child(6) {
+  animation-delay: 3.5s
+}
+
+.dot2:nth-child(5) {
+  animation-delay: 3.75s
+}
+
+.dot2:nth-child(4) {
+  animation-delay: 4.0s
+}
+
+.dot2:nth-child(3) {
+  animation-delay: 4.25s
+}
+
+.dot2:nth-child(2) {
+  animation-delay: 4.5s
+}
+
+.dot2:nth-child(1) {
+  animation-delay: 4.6s
+}
+/* #F44336;, #1E88E5, #FDD835; */
+@keyframes chomp1 {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  50% {
+    transform: rotate(45deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes chomp2 {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  50% {
+    transform: rotate(-45deg);
+  }
+
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes move {
+  0%, 100% {
+    left: -100px;
+  }
+
+  0%, 48% {
+    transform: rotateY(0deg);
+  }
+
+  50%, 100% {
+    transform: rotateY(180deg);
+  }
+
+  50% {
+    left: 100%;
+  }
+}
+
+@keyframes loader_4013 {
+  0%, 100% {
+    border-top: 10px dotted #1E88E5;
+  }
+
+  0%, 48% {
+    border-top: 10px dotted #1E88E5;
+  }
+
+  50%, 100% {
+    border-top: 10px dotted #F44336;
+  }
+
+  50% {
+    border-top: 10px dotted #F44336;
+  }
+}
+
+@keyframes dot1 {
+  0%,4% {
+    background: #1E88E5;
+    opacity: 1;
+  }
+
+  5%,94% {
+    background: #F44336;
+    opacity: 0;
+  }
+
+  95%,100% {
+    background: #1E88E5;
+    opacity: 1;
+  }
+}
+
+@keyframes dot2 {
+  0%,4% {
+    background: #F44336;
+    opacity: 1;
+  }
+
+  5%,94% {
+    opacity: 0;
+  }
+
+  95%,100% {
+    background: #F44336;
+    opacity: 1;
+  }
 }
 
 `
@@ -304,6 +409,7 @@ export default function LibraryPatch() {
       <div style={{ height: '100vh' }}>
         <SteamSpinner />
       </div>
+
     </>
   )
 }

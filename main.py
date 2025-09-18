@@ -82,22 +82,25 @@ class Plugin:
             decky.logger.debug(f"_find_hero_image error: {e}")
 
         return None
-    def _make_data_url(self, path: str) -> str | None:
-        """
-        Read file at `path` and return a data: URL string like data:image/png;base64,....
-        Returns None on failure.
-        """
-        try:
-            ctype, _ = mimetypes.guess_type(path)
-            if not ctype:
-                ctype = "application/octet-stream"
-            with open(path, "rb") as f:
-                b = f.read()
-            b64 = base64.b64encode(b).decode("ascii")
-            return f"data:{ctype};base64,{b64}"
-        except Exception as e:
-            decky.logger.error(f"_make_data_url failed for {path}: {e}")
-            return None
+    # def _make_data_url(self, path: str) -> str | None:
+    #     """
+    #     Read file at `path` and return a data: URL string like data:image/png;base64,....
+    #     Returns None on failure.
+    #     """
+    #     try:
+    #         ctype, _ = mimetypes.guess_type(path)
+    #         if not ctype:
+    #             ctype = "application/octet-stream"
+    #         with open(path, "rb") as f:
+    #             b = f.read()
+    #         b64 = base64.b64encode(b).decode("ascii")
+    #         return f"data:{ctype};base64,{b64}"
+    #     except Exception as e:
+    #         decky.logger.error(f"_make_data_url failed for {path}: {e}")
+    #         return None
+
+    def _get_hero_url(self, appid: str) -> str:
+        return f"https://steamloopback.host/customimages/{appid}_hero.png"
     def _css_translations_path(self) -> str:
         # css_translations.json lives in /home/deck/homebrew/themes/css_translations.json
         # Use decky.DECKY_USER_HOME as the base (should be /home/deck)
@@ -291,9 +294,9 @@ class Plugin:
                             if not hero_data_url:
                                 # find local hero file
                                 print('HERODATA prefind hero image', appid)
-                                path = self._find_hero_image(appid)
+                                path = self._get_hero_url(appid)
                                 if path:
-                                    hero_data_url = self._make_data_url(path)
+                                    hero_data_url =  path
                                     if hero_data_url:
                                         _HERO_CACHE[appid] = hero_data_url
                                         decky.logger.info(f"Cached hero data url for {appid}")
@@ -367,7 +370,7 @@ class Plugin:
 
 
                 # combine everything
-                hero_css = hero_img_css + "\n" + hero_blur_css + "\n" + bars_blur_css
+                hero_css = hero_blur_css + "\n" + bars_blur_css
 
                 decky.logger.info("Prepared hero CSS override with blur")
                 #await decky.emit("timer_event", "hero_css_prepared")
@@ -376,29 +379,44 @@ class Plugin:
 
                 # JSON-encode to safely embed into JS string
                 css_json = json.dumps(combined_css)
+                        # Build plain selector strings (not JS expressions)
                 loading_readable = "loadingthrobber_LoadingStatus_3rAIy"
                 container_hashed = CLASS_MAPPINGS.get(loading_readable)
                 if container_hashed:
-                    container_selector_js = f"document.querySelectorAll('.{container_hashed}')"
+                    container_selector_str = f".{container_hashed}"
                 else:
-                    container_selector_js = 'document.querySelectorAll(\'[class*="loadingthrobber_LoadingStatus_3rAIy"]\')'
-                
+                    container_selector_str = '[class*="loadingthrobber_LoadingStatus_3rAIy"]'
+
+                # top-level "content" container (scan this for inner loadingthrobbers)
+                content_container_class = "_3CN5DkgNMvdtT9fJhNOj_v"
+                content_container_hashed = CLASS_MAPPINGS.get(content_container_class)
+                if content_container_hashed:
+                    content_selector_str = f".{content_container_hashed}"
+                else:
+                    content_selector_str = '[class*="_3CN5DkgNMvdtT9fJhNOj_v"]'
+
+                # parent container for cinema bars (keeps as JS expression that returns an element)
                 parent_container_class = 'loadingthrobber_Container'
                 parent_container_hashed = CLASS_MAPPINGS.get(parent_container_class)
                 if parent_container_hashed:
                     parent_container_selector_js = f"document.querySelector('.{parent_container_hashed}')"
                 else:
-                    parent_container_selector_js = 'document.querySelector(\'[class*="loadingthrobber_SpinnerLoaderContainer"]\')'
+                    parent_container_selector_js = 'document.querySelector(\'[class*=\"loadingthrobber_SpinnerLoaderContainer\"]\')'
+
+                # JSON-encode the selector strings and other values for safe inlining into JS
+                containerSelectorJSON = json.dumps(container_selector_str)
+                contentSelectorJSON = json.dumps(content_selector_str)
                 display_json = json.dumps(display_text or "")
+              
 
-                print('HERODATA', css_json)
-
+                # JS: scan content containers, then find inner loadingthrobbers and inject into them.
                 js = f"""
                 (function() {{
                     try {{
                         const parent = document.head || document.documentElement || document.body;
                         if (!parent) return 'err:no-parent';
 
+                        // install/overwrite injected stylesheet
                         let s = document.getElementById("decky_inject_style");
                         if (!s) {{
                             s = document.createElement('style');
@@ -406,24 +424,20 @@ class Plugin:
                             s.className = "pog";
                             parent.appendChild(s);
                         }}
-                        // inject/overwrite CSS immediately
                         s.textContent = {css_json};
+                        void s.offsetWidth; // nudge renderer
 
-                        // container selector
-                        const selector = '.{container_hashed or "[class*=loadingthrobber_LoadingStatus_3rAIy]"}';
-                        const parentSelector = {parent_container_selector_js};
+                        // selectors (strings)
+                        const containerSelector = {containerSelectorJSON};
+                        const contentSelector = {contentSelectorJSON};
                         const displayText = {display_json};
+                        const parentSelector = {parent_container_selector_js}; // element or null
 
-                        // cleanup any existing observer first
-                        if (window.__deckyObserver) {{
-                            try {{ window.__deckyObserver.disconnect(); }} catch(e){{}}
-                            window.__deckyObserver = null;
-                        }}
-
+                        // inject logic for an inner loadingthrobber container
                         function injectInto(container) {{
-                            if (!container) return;
+                            if (!container || !(container instanceof Element)) return;
 
-                            // H1
+                            // --- H1 ---
                             let h = container.querySelector('#decky_inject_h1');
                             if (!h) {{
                                 h = document.createElement('h1');
@@ -432,59 +446,110 @@ class Plugin:
                             }}
                             h.innerText = displayText;
 
-                            // cinema bars
-                            const innerJsContentContainer = parentSelector;
-                            if (innerJsContentContainer) {{
-                                let topBar = innerJsContentContainer.querySelector('.cinema-bar-top');
-                                if (!topBar) {{
-                                    topBar = document.createElement('div');
-                                    topBar.className = 'cinema-bar-top';
-                                    innerJsContentContainer.appendChild(topBar);
-                                }}
-                                let bottomBar = innerJsContentContainer.querySelector('.cinema-bar-bottom');
-                                if (!bottomBar) {{
-                                    bottomBar = document.createElement('div');
-                                    bottomBar.className = 'cinema-bar-bottom';
-                                    innerJsContentContainer.appendChild(bottomBar);
+                            // --- loop-wrapper / loop-container ---
+                            // Find the parent of container (i.e., container's container)
+                            let parentOfContainer = container.parentElement;
+                            if (parentOfContainer) {{
+                                let existingLoop = parentOfContainer.querySelector('.loop-container');
+                                if (!existingLoop) {{
+                                    const loopWrapper = document.createElement('div');
+                                    loopWrapper.className = 'loop-container';
+                                    loopWrapper.innerHTML =
+                                        '<div class="dots">' +
+                                        '<div class="dot"></div>'.repeat(10) +
+                                        '</div>' +
+                                        '<div class="dots2">' +
+                                        '<div class="dot2"></div>'.repeat(10) +
+                                        '</div>' +
+                                        '<div class="circle"></div>';
+                                    parentOfContainer.appendChild(loopWrapper);
                                 }}
                             }}
 
-                            // loop-wrapper
-                            let existingLoop = container.querySelector('.loop-wrapper');
-                            if (!existingLoop) {{
-                                const loopWrapper = document.createElement('div');
-                                loopWrapper.className = 'loop-wrapper';
-                                loopWrapper.innerHTML =
-                                    '<div class="mountain"></div>' +
-                                    '<div class="hill"></div>' +
-                                    '<div class="tree"></div>' +
-                                    '<div class="tree"></div>' +
-                                    '<div class="tree"></div>' +
-                                    '<div class="rock"></div>' +
-                                    '<div class="truck"></div>' +
-                                    '<div class="wheels"></div>';
-                                h.insertAdjacentElement('afterend', loopWrapper);
+                            // --- cinema bars appended into parentSelector if present ---
+                            if (parentSelector) {{
+                                try {{
+                                    let topBar = parentSelector.querySelector('.cinema-bar-top');
+                                    if (!topBar) {{
+                                        topBar = document.createElement('div');
+                                        topBar.className = 'cinema-bar-top';
+                                        parentSelector.appendChild(topBar);
+                                    }}
+                                    let bottomBar = parentSelector.querySelector('.cinema-bar-bottom');
+                                    if (!bottomBar) {{
+                                        bottomBar = document.createElement('div');
+                                        bottomBar.className = 'cinema-bar-bottom';
+                                        parentSelector.appendChild(bottomBar);
+                                    }}
+                                }} catch(e) {{ /* ignore */ }}
                             }}
                         }}
 
-                        // inject immediately for existing containers
-                        document.querySelectorAll(selector).forEach(injectInto);
+                        // helper: given a content container, inject into all inner loadingthrobber containers
+                        function injectIntoContent(contentEl) {{
+                            if (!contentEl || !(contentEl instanceof Element)) return;
+                            let inner = Array.from(contentEl.querySelectorAll(containerSelector));
+                            inner.forEach(injectInto);
+                        }}
 
-                        // watch for new containers
+                        // initial pass: find all content containers, then inject into inner containers
+                        Array.from(document.querySelectorAll(contentSelector)).forEach(injectIntoContent);
+
+                        // Also handle the case where loadingthrobber containers may exist outside content containers:
+                        Array.from(document.querySelectorAll(containerSelector)).forEach(injectInto);
+
+                        // MutationObserver: watch for new nodes. If a new content container appears -> handle its inner items.
+                        // Also handle nodes that directly add a loadingthrobber container.
+                        if (window.__deckyObserver) {{
+                            try {{ window.__deckyObserver.disconnect(); }} catch(e){{}}
+                            window.__deckyObserver = null;
+                        }}
+
                         const observer = new MutationObserver((mutations) => {{
                             for (const m of mutations) {{
                                 for (const node of m.addedNodes) {{
                                     if (!(node instanceof Element)) continue;
-                                    if (node.matches && node.matches(selector)) {{
-                                        injectInto(node);
-                                    }}
-                                    const inner = node.querySelectorAll ? node.querySelectorAll(selector) : [];
-                                    inner.forEach(injectInto);
+
+                                    // if a whole content container was added, handle it
+                                    try {{
+                                        if (node.matches && node.matches(contentSelector)) {{
+                                            injectIntoContent(node);
+                                            continue;
+                                        }}
+                                    }} catch(e){{ /* ignore invalid selector matches */ }}
+
+                                    // if content containers were added deeper in the subtree
+                                    try {{
+                                        const foundContent = node.querySelectorAll ? node.querySelectorAll(contentSelector) : [];
+                                        if (foundContent && foundContent.length) {{
+                                            Array.from(foundContent).forEach(injectIntoContent);
+                                        }}
+                                    }} catch(e){{ /* ignore */ }}
+
+                                    // also, if a loadingthrobber container itself was added directly
+                                    try {{
+                                        if (node.matches && node.matches(containerSelector)) {{
+                                            injectInto(node);
+                                        }} else {{
+                                            const foundContainers = node.querySelectorAll ? node.querySelectorAll(containerSelector) : [];
+                                            if (foundContainers && foundContainers.length) {{
+                                                Array.from(foundContainers).forEach(injectInto);
+                                            }}
+                                        }}
+                                    }} catch(e){{ /* ignore */ }}
                                 }}
                             }}
                         }});
                         observer.observe(document.body, {{ childList: true, subtree: true }});
                         window.__deckyObserver = observer;
+
+                        // define cleanup function on UI side so backend can stop it later
+                        window.__deckyStopObserver = function() {{
+                            if (window.__deckyObserver) {{
+                                try {{ window.__deckyObserver.disconnect(); }} catch(e){{}}
+                                window.__deckyObserver = null;
+                            }}
+                        }};
 
                         return 'observer-started';
                     }} catch(e) {{
@@ -493,10 +558,9 @@ class Plugin:
                 }})();
                 """
 
-
-
-                #await decky.emit("timer_event", "injecting css+h1")
+                # send to CEF
                 await self._eval_js(js)
+
                 await decky.emit("timer_event", "injected css+h1")
         except Exception as e:
             decky.logger.error(f"start_timer injection failed: {e}")
