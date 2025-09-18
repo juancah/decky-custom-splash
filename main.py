@@ -241,7 +241,7 @@ class Plugin:
 
     # --- modified start_timer: now injects CSS (and translates classnames)---
     async def start_timer(self, css: str, appinfo: dict = None):
-        await asyncio.sleep(1)
+        
         """
         Inject CSS where:
         - `css` is the client-provided container CSS (human-readable names OK)
@@ -322,14 +322,15 @@ class Plugin:
                 declarations_blur = (
                     "  content: \"\";\n"
                     "  position: absolute;\n"
-                    "  top: 0;\n"
+                    "  top: 12%;\n"
                     "  left: 0;\n"
                     "  right: 0;\n"
                     "  bottom: 0;\n"
+                    "  height: 76%;\n"
+                    "  z-index: 1;\n"
                     f'  background-image: url("{hero_data_url}");\n'
                     "  background-size: cover;\n"
                     "  background-position: left;\n"
-                    "  filter: blur(10px);\n"
                     "  opacity: 0.8;\n"
                     "  animation: ps5-zoom 20s ease-in-out infinite alternate;"
                 )
@@ -337,11 +338,36 @@ class Plugin:
                 hero_blur_css = self._build_hashed_css(
                     ["loadingthrobber_ContainerBackground_2ngG3"],
                     declarations_blur,
+                    suffix="::after"
+                )
+                bars_declarations_blur = (
+                    "  content: '';\n"
+                    "  display: block;\n"
+                    "  opacity: 0.4;\n"
+                    "  width: 100%;\n"
+                    f'  background-image: url("{hero_data_url}");\n'
+                    "  height: 100%;\n"
+                    "  position: absolute;\n"
+                    "  background-size: cover;\n"
+                    "  background-position: center;\n"
+                    "  top: 0;\n"
+                    "  z-index: 0;\n"
+                    "  left: 0;\n"
+                    "  right: 0;\n"
+                    "  filter: blur(3px);\n"
+                    "  bottom: 0;\n"
+                )
+
+
+                bars_blur_css = self._build_hashed_css(
+                    ["loadingthrobber_ContainerBackground_2ngG3"],
+                    bars_declarations_blur,
                     suffix="::before"
                 )
 
+
                 # combine everything
-                hero_css = hero_img_css + "\n" + hero_blur_css
+                hero_css = hero_img_css + "\n" + hero_blur_css + "\n" + bars_blur_css
 
                 decky.logger.info("Prepared hero CSS override with blur")
                 #await decky.emit("timer_event", "hero_css_prepared")
@@ -356,14 +382,19 @@ class Plugin:
                     container_selector_js = f"document.querySelectorAll('.{container_hashed}')"
                 else:
                     container_selector_js = 'document.querySelectorAll(\'[class*="loadingthrobber_LoadingStatus_3rAIy"]\')'
-
+                
+                parent_container_class = 'loadingthrobber_Container'
+                parent_container_hashed = CLASS_MAPPINGS.get(parent_container_class)
+                if parent_container_hashed:
+                    parent_container_selector_js = f"document.querySelector('.{parent_container_hashed}')"
+                else:
+                    parent_container_selector_js = 'document.querySelector(\'[class*="loadingthrobber_SpinnerLoaderContainer"]\')'
                 display_json = json.dumps(display_text or "")
 
                 print('HERODATA', css_json)
 
-                # JS: overwrite style contents and create/update H1 for every container
                 js = f"""
-                (function(){{
+                (function() {{
                     try {{
                         const parent = document.head || document.documentElement || document.body;
                         if (!parent) return 'err:no-parent';
@@ -375,49 +406,94 @@ class Plugin:
                             s.className = "pog";
                             parent.appendChild(s);
                         }}
+                        // inject/overwrite CSS immediately
                         s.textContent = {css_json};
 
-                        try {{
-                            const containers = Array.from({container_selector_js});
-                            containers.forEach(container => {{
-                                // --- H1 insertion ---
-                                let h = container.querySelector('#decky_inject_h1');
-                                if (!h) {{
-                                    h = document.createElement('h1');
-                                    h.id = "decky_inject_h1";
-                                    container.appendChild(h);
-                                }}
-                                h.innerText = {display_json};
+                        // container selector
+                        const selector = '.{container_hashed or "[class*=loadingthrobber_LoadingStatus_3rAIy]"}';
+                        const parentSelector = {parent_container_selector_js};
+                        const displayText = {display_json};
 
-                                // --- loop-wrapper insertion below H1 ---
-                                let existingLoop = container.querySelector('.loop-wrapper');
-                                if (!existingLoop) {{
-                                    const loopWrapper = document.createElement('div');
-                                    loopWrapper.className = 'loop-wrapper';
-                                    loopWrapper.innerHTML = `
-                                        <div class="mountain"></div>
-                                        <div class="hill"></div>
-                                        <div class="tree"></div>
-                                        <div class="tree"></div>
-                                        <div class="tree"></div>
-                                        <div class="rock"></div>
-                                        <div class="truck"></div>
-                                        <div class="wheels"></div>
-                                    `;
-                                    h.insertAdjacentElement('afterend', loopWrapper);
-                                }}
-                            }});
-                            console.log('CONTAINERS', containers);
-                        }} catch(innerErr) {{
-                            // ignore H1/loop-wrapper failures
+                        // cleanup any existing observer first
+                        if (window.__deckyObserver) {{
+                            try {{ window.__deckyObserver.disconnect(); }} catch(e){{}}
+                            window.__deckyObserver = null;
                         }}
 
-                        'ok';
+                        function injectInto(container) {{
+                            if (!container) return;
+
+                            // H1
+                            let h = container.querySelector('#decky_inject_h1');
+                            if (!h) {{
+                                h = document.createElement('h1');
+                                h.id = "decky_inject_h1";
+                                container.appendChild(h);
+                            }}
+                            h.innerText = displayText;
+
+                            // cinema bars
+                            const innerJsContentContainer = parentSelector;
+                            if (innerJsContentContainer) {{
+                                let topBar = innerJsContentContainer.querySelector('.cinema-bar-top');
+                                if (!topBar) {{
+                                    topBar = document.createElement('div');
+                                    topBar.className = 'cinema-bar-top';
+                                    innerJsContentContainer.appendChild(topBar);
+                                }}
+                                let bottomBar = innerJsContentContainer.querySelector('.cinema-bar-bottom');
+                                if (!bottomBar) {{
+                                    bottomBar = document.createElement('div');
+                                    bottomBar.className = 'cinema-bar-bottom';
+                                    innerJsContentContainer.appendChild(bottomBar);
+                                }}
+                            }}
+
+                            // loop-wrapper
+                            let existingLoop = container.querySelector('.loop-wrapper');
+                            if (!existingLoop) {{
+                                const loopWrapper = document.createElement('div');
+                                loopWrapper.className = 'loop-wrapper';
+                                loopWrapper.innerHTML =
+                                    '<div class="mountain"></div>' +
+                                    '<div class="hill"></div>' +
+                                    '<div class="tree"></div>' +
+                                    '<div class="tree"></div>' +
+                                    '<div class="tree"></div>' +
+                                    '<div class="rock"></div>' +
+                                    '<div class="truck"></div>' +
+                                    '<div class="wheels"></div>';
+                                h.insertAdjacentElement('afterend', loopWrapper);
+                            }}
+                        }}
+
+                        // inject immediately for existing containers
+                        document.querySelectorAll(selector).forEach(injectInto);
+
+                        // watch for new containers
+                        const observer = new MutationObserver((mutations) => {{
+                            for (const m of mutations) {{
+                                for (const node of m.addedNodes) {{
+                                    if (!(node instanceof Element)) continue;
+                                    if (node.matches && node.matches(selector)) {{
+                                        injectInto(node);
+                                    }}
+                                    const inner = node.querySelectorAll ? node.querySelectorAll(selector) : [];
+                                    inner.forEach(injectInto);
+                                }}
+                            }}
+                        }});
+                        observer.observe(document.body, {{ childList: true, subtree: true }});
+                        window.__deckyObserver = observer;
+
+                        return 'observer-started';
                     }} catch(e) {{
-                        'err:'+e.toString();
+                        return 'err:'+e.toString();
                     }}
                 }})();
                 """
+
+
 
                 #await decky.emit("timer_event", "injecting css+h1")
                 await self._eval_js(js)
@@ -425,6 +501,25 @@ class Plugin:
         except Exception as e:
             decky.logger.error(f"start_timer injection failed: {e}")
             await decky.emit("timer_event", f"inject failed: {e}")
+
+    async def stop_timer(self):
+        try:
+            print('BACKEND stopping timer')
+            js = """
+            (function(){
+                if (window.__deckyStopObserver) {
+                    window.__deckyStopObserver();
+                    return 'observer-stopped';
+                }
+                return 'no-observer';
+            })();
+            """
+            await self._eval_js(js)
+            await decky.emit("timer_event", "observer stopped")
+        except Exception as e:
+            decky.logger.error(f"stop_timer failed: {e}")
+            await decky.emit("timer_wevent", f"stop failed: {e}")
+
 
     # Migrations that should be performed before entering `_main()`.
     async def _migration(self):
